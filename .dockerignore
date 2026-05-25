@@ -1,0 +1,18 @@
+node_modules
+.next
+.git
+.gitignore
+
+# Local env files — use Railway/Render dashboard for secrets
+.env.local
+.env.*.local
+.env
+
+# Build artifacts (rebuilt inside Docker)
+dist-scripts
+
+# Dev logs and temp files
+*.log
+automation-*.log
+temp-screenshots/
+.playwright-browsers/

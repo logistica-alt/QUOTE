@@ -1,0 +1,81 @@
+name: Echo LTL Automation
+
+# Triggered by a repository_dispatch event (webhook) from the Next.js API route
+# POST /api/automation  triggers this via GitHub's repository_dispatch API
+
+on:
+  repository_dispatch:
+    types: [run-echo-automation]
+
+# Allow only one automation job per unique quote to avoid duplicate submissions
+concurrency:
+  group: echo-automation-${{ github.event.client_payload.quote_id }}
+  cancel-in-progress: false
+
+jobs:
+  automate:
+    name: Quote ${{ github.event.client_payload.quote_id }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout source code
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Set up Node.js with npm cache
+      # -----------------------------------------------------------------------
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # -----------------------------------------------------------------------
+      # 3. Install npm dependencies (uses package-lock.json for reproducibility)
+      # -----------------------------------------------------------------------
+      - name: Install dependencies
+        run: npm ci
+
+      # -----------------------------------------------------------------------
+      # 4. Install Playwright Chromium + its system dependencies
+      #    --with-deps installs the OS-level packages Chromium needs on Ubuntu
+      # -----------------------------------------------------------------------
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      # -----------------------------------------------------------------------
+      # 5. Run the automation script
+      #    The quote_id is passed in the repository_dispatch client_payload
+      # -----------------------------------------------------------------------
+      - name: Run Echo LTL Automation
+        env:
+          ECHO_USERNAME: ${{ secrets.ECHO_USERNAME }}
+          ECHO_PASSWORD: ${{ secrets.ECHO_PASSWORD }}
+          ECHO_PORTAL_URL: ${{ secrets.ECHO_PORTAL_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          AUTOMATION_SECRET: ${{ secrets.AUTOMATION_SECRET }}
+        run: |
+          echo "Running automation for quote: ${{ github.event.client_payload.quote_id }}"
+          npx ts-node --project tsconfig.scripts.json scripts/echo-automation.ts \
+            --quote-id=${{ github.event.client_payload.quote_id }}
+
+      # -----------------------------------------------------------------------
+      # 6. Upload any Playwright traces / debug screenshots as artifacts
+      #    This step always runs so failures are still debuggable
+      # -----------------------------------------------------------------------
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-artifacts-${{ github.event.client_payload.quote_id }}
+          path: |
+            temp-screenshots/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
